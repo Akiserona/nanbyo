@@ -28,6 +28,7 @@
                     animation: {
                         blob: "blob 7s infinite",
                         "slide-up": "slideUp 0.3s ease-out",
+                        "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
                     },
                     keyframes: {
                         blob: {
@@ -48,7 +49,6 @@
     <style>
         body { font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; }
         html { scroll-behavior: smooth; }
-        /* チャットのスクロールバー */
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -60,7 +60,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- アイコン (Lucide-react互換) ---
+        // --- アイコン ---
         const IconWrapper = ({ children, className }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
         );
@@ -81,7 +81,178 @@
         const MessageCircle = ({ size, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>;
         const Send = ({ size, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>;
         const Bot = ({ size, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>;
+        const Search = ({ size, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
 
+        // --- チャットボット用 拡張知識データベース ---
+        // 事務処理の手引き及び広島県Webサイトより抽出したデータをJSON化
+        const KNOWLEDGE_BASE = [
+            // 新規申請
+            {
+                id: "new_app_docs",
+                keywords: ["新規", "初めて", "はじめて", "必要書類", "書類"],
+                category: "申請手続き",
+                title: "新規申請に必要な書類",
+                content: "新規申請には以下の書類が必要です：\n1. 特定医療費（指定難病）支給認定申請書（様式1）\n2. 臨床調査個人票（難病指定医が作成したもの・6ヶ月以内）\n3. 住民票（世帯全員・続柄・マイナンバー入り・3ヶ月以内）\n4. 市町村民税課税証明書（所得確認のため）\n5. 健康保険証のコピー（患者と被保険者分）\n※広島市在住の方は各区保健センターへ提出が必要です。"
+            },
+            {
+                id: "new_app_timing",
+                keywords: ["新規", "いつ", "タイミング", "診断", "1ヶ月"],
+                category: "申請手続き",
+                title: "新規申請のタイミング",
+                content: "診断を受けてから原則1ヶ月以内に申請してください。助成の開始日は、原則として「重症度分類を満たしていると診断された日」まで遡ることができます（申請日から1ヶ月前まで）。やむを得ない理由がある場合は最長3ヶ月まで遡れる場合があります。"
+            },
+            
+            // 更新申請
+            {
+                id: "renew_timing",
+                keywords: ["更新", "いつ", "時期", "案内", "届かない"],
+                category: "更新手続き",
+                title: "更新申請の時期",
+                content: "更新は年に1回必要です。広島県（広島市除く）では通常5月末に案内が発送され、6月初旬〜8月初旬が受付期間となります。案内が届かない場合は、管轄の保健所へお問い合わせください。"
+            },
+            {
+                id: "renew_docs",
+                keywords: ["更新", "書類", "必要書類"],
+                category: "更新手続き",
+                title: "更新申請に必要な書類",
+                content: "更新には主に以下が必要です：\n1. 支給認定申請書（更新用・様式2）\n2. 臨床調査個人票（更新用）\n3. 現在の受給者証のコピー\n4. 保険証のコピー\n5. 課税証明書（マイナンバー連携していない場合など）\n※更新案内冊子を必ずご確認ください。"
+            },
+
+            // 変更申請
+            {
+                id: "change_address",
+                keywords: ["住所", "変更", "引っ越し", "引越", "転居"],
+                category: "変更手続き",
+                title: "住所が変わった場合",
+                content: "住所が変わった場合は「変更申請」が必要です。「特定医療費（指定難病）受給者証等記載事項変更届（様式4）」と、新しい住所がわかる書類（住民票や運転免許証の裏面コピーなど）を保健所へ提出してください。"
+            },
+            {
+                id: "change_insurance",
+                keywords: ["保険証", "変わった", "変更", "記号", "番号"],
+                category: "変更手続き",
+                title: "保険証が変わった場合",
+                content: "加入する医療保険が変わった場合や、記号番号が変わった場合は変更届が必要です。新しい保険証のコピーと「記載事項変更届（様式4）」を提出してください。所得区分が変わる可能性がある場合は、課税証明書も必要になることがあります。"
+            },
+            {
+                id: "change_name",
+                keywords: ["名前", "氏名", "変更", "結婚", "名字"],
+                category: "変更手続き",
+                title: "氏名が変わった場合",
+                content: "氏名が変わった場合は「記載事項変更届（様式4）」と、変更の事実がわかる書類（住民票や戸籍抄本など）を提出してください。"
+            },
+
+            // 転入・転出
+            {
+                id: "move_in",
+                keywords: ["転入", "県外", "他県", "引っ越し", "来た"],
+                category: "転入・転出",
+                title: "他県から広島県へ転入した場合",
+                content: "受給者証の有効期間内であれば「転入申請」が可能です。必要なものは：\n1. 支給認定申請書（様式2）\n2. 転入前の受給者証のコピー\n3. 広島県の住民票\n4. 課税証明書\nなどが主な書類です。転入前の自治体での有効期間が引き継がれます。"
+            },
+            {
+                id: "move_out",
+                keywords: ["転出", "県外", "出る", "引っ越し", "やめる"],
+                category: "転入・転出",
+                title: "広島県外へ転出する場合",
+                content: "広島県での受給を中止するための「中止届（様式5）」の提出が必要です。その後、転居先の都道府県で新たに転入の手続きを行ってください。転居先での手続きには、広島県の受給者証が必要になる場合があるため、コピーを取っておくことをお勧めします。"
+            },
+
+            // 特例制度（軽症高額・高額かつ長期）
+            {
+                id: "mild_high_cost",
+                keywords: ["軽症高額", "軽症", "33330", "３万"],
+                category: "特例制度",
+                title: "軽症高額特例について",
+                content: "重症度分類を満たさない場合でも、指定難病の医療費総額（10割分）が「33,330円」を超える月が、申請日の属する月以前の12ヶ月以内に「3回以上」ある場合、助成の対象となります。証明には領収書や「医療費申告書（様式7）」が必要です。"
+            },
+            {
+                id: "high_cost_long_term",
+                keywords: ["高額かつ長期", "長期", "5万", "50000", "高額"],
+                category: "特例制度",
+                title: "高額かつ長期特例について",
+                content: "指定難病の医療費総額（10割分）が「50,000円」を超える月が年間「6回以上」ある場合、自己負担上限額が軽減される制度です（一般所得・上位所得の方）。小児慢性特定疾病の医療費も合算対象になります。"
+            },
+
+            // お金・償還払い
+            {
+                id: "reimbursement",
+                keywords: ["償還", "払い戻し", "還付", "返金", "戻る", "戻って"],
+                category: "費用・助成",
+                title: "医療費の払い戻し（償還払い）",
+                content: "受給者証が届くまでに支払った医療費（2割を超えた分など）は請求できます。\n必要書類：\n1. 償還払申請書（様式10）\n2. 領収証明書（様式11・医療機関に作成依頼）\n3. 口座のわかるもの\n4. 受給者証のコピー\n申請から振込まで3〜5ヶ月程度かかります。"
+            },
+            {
+                id: "cost_limit",
+                keywords: ["上限額", "いくら", "負担額", "金額"],
+                category: "費用・助成",
+                title: "自己負担上限額について",
+                content: "世帯の市町村民税額に応じて月額上限額が決まります。\n・生活保護：0円\n・低所得I/II：2,500円〜5,000円\n・一般I：10,000円\n・一般II：20,000円\n・上位所得：30,000円\n※「高額かつ長期」に該当するとさらに軽減されます。"
+            },
+             {
+                id: "respirator",
+                keywords: ["人工呼吸器", "1000", "千円"],
+                category: "費用・助成",
+                title: "人工呼吸器等装着者の特例",
+                content: "指定難病により継続して人工呼吸器等を装着し、日常生活動作が著しく制限されている方は、所得にかかわらず自己負担上限額が月額1,000円になります。認定には臨床調査個人票での確認が必要です。"
+            },
+
+            // 窓口・その他
+            {
+                id: "office_hiroshima",
+                keywords: ["広島市", "中区", "東区", "南区", "西区", "安佐南区", "安佐北区", "安芸区", "佐伯区"],
+                category: "窓口",
+                title: "広島市にお住まいの方",
+                content: "広島市にお住まいの方は、申請窓口が各区の「保健センター」になります。様式や手続きが一部異なる場合があるため、広島市のホームページをご確認ください。"
+            },
+            {
+                id: "office_pref",
+                keywords: ["窓口", "どこ", "提出", "場所", "郵送"],
+                category: "窓口",
+                title: "申請窓口（広島市以外）",
+                content: "広島県（広島市以外）にお住まいの方は、住所地を管轄する「保健所（または支所）」が窓口です。郵送での提出も可能です。郵送の場合は保健所に届いた日が受付日となります。"
+            },
+            {
+                id: "designated_doctor",
+                keywords: ["指定医", "診断書", "作成", "先生", "病院"],
+                category: "医療機関",
+                title: "難病指定医について",
+                content: "新規申請用の診断書（臨床調査個人票）を作成できるのは、都道府県知事の指定を受けた「難病指定医」に限られます。更新用は「協力難病指定医」でも作成可能です。"
+            }
+        ];
+
+        // --- 検索ロジック ---
+        const searchKnowledgeBase = (query) => {
+            if (!query.trim()) return [];
+            
+            const searchTerms = query.toLowerCase().replace(/[\s　]+/g, ' ').split(' ');
+            
+            // スコアリング
+            const results = KNOWLEDGE_BASE.map(item => {
+                let score = 0;
+                // キーワード一致
+                item.keywords.forEach(k => {
+                    if (query.includes(k)) score += 3;
+                });
+                // タイトル一致
+                if (item.title.includes(query)) score += 2;
+                // 内容一致
+                if (item.content.includes(query)) score += 1;
+                
+                // 複数キーワード対応（AND検索的な加点）
+                const matchCount = searchTerms.filter(term => 
+                    item.keywords.some(k => k.includes(term)) || 
+                    item.title.includes(term) || 
+                    item.content.includes(term)
+                ).length;
+                
+                if (matchCount === searchTerms.length) score += 5; // 全単語が含まれていれば高得点
+
+                return { ...item, score };
+            });
+
+            // スコアが高い順にソートし、0点を除外
+            return results.filter(r => r.score > 0).sort((a, b) => b.score - a.score);
+        };
 
         // --- UI コンポーネント ---
 
@@ -123,410 +294,6 @@
                 </div>
             </div>
         );
-
-        // チャットボットコンポーネント
-        const ChatBot = () => {
-            const [isOpen, setIsOpen] = useState(false);
-            const [messages, setMessages] = useState([
-                { type: 'bot', text: 'こんにちは！広島県難病ガイドボットです。知りたいこと（例：「更新」「金額」「窓口」など）を入力してください。' }
-            ]);
-            const [input, setInput] = useState("");
-            const messagesEndRef = useRef(null);
-
-            const scrollToBottom = () => {
-                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            };
-
-            useEffect(() => {
-                scrollToBottom();
-            }, [messages, isOpen]);
-
-            // 簡易的な応答ロジック (キーワードマッチ)
-            const handleSend = () => {
-                if (!input.trim()) return;
-
-                const userMsg = input.trim();
-                setMessages(prev => [...prev, { type: 'user', text: userMsg }]);
-                setInput("");
-
-                // 簡易レスポンス生成
-                setTimeout(() => {
-                    let botResponse = "申し訳ありません。その質問にはうまく答えられないかもしれません。保健所へ直接お問い合わせいただくと確実です。";
-                    
-                    if (userMsg.includes("更新")) {
-                        botResponse = "更新申請ですね。有効期間が終わる前に手続きが必要です。通常6月頃に案内が届きます。必要な書類は「申請の流れ」セクションのタブを「更新」に切り替えて確認できますよ。";
-                    } else if (userMsg.includes("新規") || userMsg.includes("初めて")) {
-                        botResponse = "初めての申請ですね。まずは「難病指定医」による診断書（臨床調査個人票）が必要です。その後、住民票などを揃えて保健所へ提出します。";
-                    } else if (userMsg.includes("金額") || userMsg.includes("いくら") || userMsg.includes("負担")) {
-                        botResponse = "自己負担は原則2割ですが、所得に応じて「月額上限額」が決まります。例えば一般所得の方は月1万〜2万円が上限です。詳しくは「よくある質問」もご覧ください。";
-                    } else if (userMsg.includes("住所") || userMsg.includes("変更") || userMsg.includes("引越")) {
-                        botResponse = "住所や保険証が変わった場合は「変更申請」が必要です。「申請の流れ」セクションのタブを「変更」に切り替えると、必要な書類を確認できます。";
-                    } else if (userMsg.includes("どこ") || userMsg.includes("窓口") || userMsg.includes("場所")) {
-                        botResponse = "申請窓口は、お住まいの住所を管轄する「保健所」です。広島市にお住まいの方は、各区の「保健センター」になります。";
-                    } else if (userMsg.includes("軽症")) {
-                        botResponse = "重症度分類を満たさない場合でも、医療費が高い月（33,330円超）が年3回以上ある場合は「軽症高額」として助成を受けられる可能性があります。";
-                    }
-
-                    setMessages(prev => [...prev, { type: 'bot', text: botResponse }]);
-                }, 600);
-            };
-
-            const handleKeyDown = (e) => {
-                if (e.key === 'Enter') handleSend();
-            };
-
-            return (
-                <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
-                    {/* チャットウィンドウ */}
-                    {isOpen && (
-                        <div className="mb-4 w-80 md:w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-slide-up flex flex-col" style={{height: "500px"}}>
-                            {/* ヘッダー */}
-                            <div className="bg-rose-500 p-4 text-white flex justify-between items-center shadow-md">
-                                <div className="flex items-center gap-2">
-                                    <Bot size={20} />
-                                    <span className="font-bold">難病ガイドボット (AI風)</span>
-                                </div>
-                                <button onClick={() => setIsOpen(false)} className="hover:bg-rose-600 p-1 rounded">
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            {/* メッセージエリア */}
-                            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 space-y-4">
-                                {messages.map((msg, idx) => (
-                                    <div key={idx} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`max-w-[85%] rounded-2xl p-3 text-sm leading-relaxed shadow-sm ${
-                                            msg.type === 'user' 
-                                                ? 'bg-rose-500 text-white rounded-tr-none' 
-                                                : 'bg-white text-gray-700 border border-gray-200 rounded-tl-none'
-                                        }`}>
-                                            {msg.text}
-                                        </div>
-                                    </div>
-                                ))}
-                                <div ref={messagesEndRef} />
-                            </div>
-
-                            {/* 入力エリア */}
-                            <div className="p-3 bg-white border-t border-gray-100">
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"
-                                        placeholder="質問を入力..."
-                                        value={input}
-                                        onChange={(e) => setInput(e.target.value)}
-                                        onKeyDown={handleKeyDown}
-                                    />
-                                    <button 
-                                        onClick={handleSend}
-                                        className="bg-rose-500 text-white p-2 rounded-full hover:bg-rose-600 transition shadow-sm flex-shrink-0"
-                                    >
-                                        <Send size={18} />
-                                    </button>
-                                </div>
-                                <p className="text-[10px] text-gray-400 text-center mt-2">
-                                    ※自動応答のため、正確な情報は保健所にご確認ください。
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 起動ボタン */}
-                    <button 
-                        onClick={() => setIsOpen(!isOpen)}
-                        className={`${isOpen ? 'bg-gray-500' : 'bg-rose-500'} text-white p-4 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center justify-center`}
-                    >
-                        {isOpen ? <X size={28} /> : <MessageCircle size={28} />}
-                    </button>
-                </div>
-            );
-        };
-
-
-        // --- ドキュメントデータ ---
-        const DOCUMENT_DATA = {
-            new: {
-                title: "新規申請",
-                desc: "初めて申請をする場合の手続きです。診断から原則1ヶ月以内に申請してください。",
-                step2_desc: "お住まいの市役所などで必要な書類を集めます（広島県の場合）。",
-                items: [
-                    "特定医療費（指定難病）支給認定申請書（様式1）",
-                    "臨床調査個人票（難病指定医が作成したもの・6ヶ月以内）",
-                    "住民票（世帯全員分・マイナンバー入り・3ヶ月以内）",
-                    "市町村民税課税証明書（世帯全員分など）",
-                    "健康保険証のコピー（患者と被保険者分）"
-                ]
-            },
-            renew: {
-                title: "更新申請",
-                desc: "年に1回の更新手続きです。有効期間が終わる前に手続きが必要です（通常6月頃案内あり）。",
-                step2_desc: "送られてきた更新案内を確認し、以下の書類を準備します。",
-                items: [
-                    "特定医療費（指定難病）支給認定申請書（更新用・様式2）",
-                    "臨床調査個人票（更新用）",
-                    "現在の受給者証のコピー",
-                    "自己負担上限額管理票のコピー",
-                    "健康保険証のコピー",
-                    "市町村民税課税証明書（マイナンバー連携していない場合など）"
-                ]
-            },
-            change: {
-                title: "変更申請",
-                desc: "住所、氏名、加入保険が変わった場合などは、速やかに届け出が必要です。",
-                step2_desc: "変更内容によって書類が異なりますが、基本的には以下が必要です。",
-                items: [
-                    "特定医療費（指定難病）支給認定申請書（変更用）または変更届",
-                    "変更の事実が確認できる書類（新しい住民票、保険証など）",
-                    "現在の受給者証（原本が必要な場合あり）",
-                    "※階層区分が変わる場合は、課税証明書も必要です"
-                ]
-            }
-        };
-
-        // メイン App コンポーネント
-        function App() {
-            const [isMenuOpen, setIsMenuOpen] = useState(false);
-            const [openFaq, setOpenFaq] = useState(null);
-            const [docType, setDocType] = useState("new"); // new, renew, change
-
-            const toggleFaq = (index) => {
-                setOpenFaq(openFaq === index ? null : index);
-            };
-
-            const faqs = [
-                {
-                    q: "「軽症高額」ってなに？",
-                    a: "病状の基準（重症度）には届かないけれど、医療費がたくさんかかっている方のための特例です。申請前の12ヶ月以内に、指定難病の医療費総額（10割分）が33,330円を超える月が3回以上あれば対象になります。"
-                },
-                {
-                    q: "自己負担上限額はどうやって決まるの？",
-                    a: "世帯の所得（市町村民税額）によって決まります。例えば、一般所得の方なら月額1万円〜2万円、低所得の方は2,500円〜5,000円などが上限となります。"
-                },
-                {
-                    q: "広島市に住んでいるんだけど...",
-                    a: "このサイトの情報は主に広島県（広島市以外）の方に向けた内容です。広島市にお住まいの方は、申請窓口が「各区の保健センター」になります。"
-                },
-                {
-                    q: "受給者証はいつ届く？",
-                    a: "申請から交付まで、通常2〜3ヶ月程度かかります。手元に届くまでに支払った医療費は、後から「償還払い（払い戻し）」の手続きができます。"
-                }
-            ];
-
-            return (
-                <div className="min-h-screen bg-[#FFFBF7] font-sans text-gray-700 pb-20">
-                    {/* ヘッダー */}
-                    <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md shadow-sm border-b border-rose-100">
-                        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="bg-rose-500 text-white p-1.5 rounded-lg">
-                                    <Heart size={20} fill="currentColor" />
-                                </div>
-                                <h1 className="font-bold text-lg md:text-xl tracking-tight text-gray-800">
-                                    広島県 難病医療費助成ガイド
-                                </h1>
-                            </div>
-                            
-                            <nav className="hidden md:flex gap-6 text-sm font-medium text-gray-600">
-                                <a href="#about" className="hover:text-rose-500 transition">制度について</a>
-                                <a href="#flow" className="hover:text-rose-500 transition">申請の流れ</a>
-                                <a href="#money" className="hover:text-rose-500 transition">お金の仕組み</a>
-                                <a href="#faq" className="hover:text-rose-500 transition">よくある質問</a>
-                            </nav>
-
-                            <button className="md:hidden text-gray-600" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-                                {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-                            </button>
-                        </div>
-
-                        {isMenuOpen && (
-                            <div className="md:hidden bg-white border-t border-gray-100 absolute w-full shadow-lg">
-                                <div className="flex flex-col p-4 gap-4 text-sm font-medium">
-                                    <a href="#about" onClick={() => setIsMenuOpen(false)}>制度について</a>
-                                    <a href="#flow" onClick={() => setIsMenuOpen(false)}>申請の流れ</a>
-                                    <a href="#money" onClick={() => setIsMenuOpen(false)}>お金の仕組み</a>
-                                    <a href="#faq" onClick={() => setIsMenuOpen(false)}>よくある質問</a>
-                                </div>
-                            </div>
-                        )}
-                    </header>
-
-                    {/* ヒーローセクション */}
-                    <div className="relative bg-gradient-to-br from-rose-50 via-white to-orange-50 py-16 md:py-24 px-4 overflow-hidden">
-                        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-yellow-100 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
-                        <div className="absolute top-0 left-0 -ml-20 -mt-20 w-64 h-64 bg-rose-100 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
-                        
-                        <div className="max-w-4xl mx-auto text-center relative z-10">
-                            <span className="inline-block py-1 px-3 rounded-full bg-rose-100 text-rose-600 text-sm font-bold mb-4">
-                                申請手続きがわかりやすく
-                            </span>
-                            <h1 className="text-3xl md:text-5xl font-extrabold text-gray-800 mb-6 leading-tight">
-                                治療費の不安を、<br className="md:hidden"/>安心に変える制度です。
-                            </h1>
-                            <p className="text-gray-600 md:text-lg mb-8 max-w-2xl mx-auto leading-relaxed">
-                                指定難病と診断された方のために、医療費の負担を軽くする「医療費助成制度」。
-                                申請の種類に合わせた必要書類や、お金の仕組みをやさしく解説します。
-                            </p>
-                            <div className="flex flex-wrap justify-center gap-4">
-                                <a href="#flow" className="bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:bg-rose-600 hover:shadow-xl transition transform hover:-translate-y-0.5">
-                                    申請の流れを見る
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-
-                    <main>
-                        {/* 制度について */}
-                        <GuideSection id="about" title="どんな制度？" icon={HelpCircle} className="bg-white">
-                            <div className="grid md:grid-cols-2 gap-8 items-center">
-                                <div className="space-y-4">
-                                    <p className="text-lg text-gray-700 leading-relaxed">
-                                        国が定めた「指定難病」にかかっている方で、病状などが一定の基準を満たす場合に、
-                                        <span className="font-bold text-rose-500 bg-rose-50 px-1">医療費の一部を国や県が助成してくれる</span>制度です。
-                                    </p>
-                                    <div className="bg-teal-50 p-5 rounded-2xl border border-teal-100">
-                                        <h3 className="font-bold text-teal-800 mb-2 flex items-center gap-2">
-                                            <CheckCircle2 size={18} />
-                                            メリット
-                                        </h3>
-                                        <ul className="space-y-2 text-sm text-teal-900">
-                                            <li>・窓口での支払いが2割負担になります（通常3割の方）。</li>
-                                            <li>・所得に応じて、月ごとの支払い上限額（キャップ）が決まります。</li>
-                                            <li>・上限額を超えた分は支払わなくてOKです。</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                                <div className="bg-orange-50 rounded-2xl p-6 flex items-center justify-center">
-                                    <div className="text-center">
-                                        <div className="text-4xl mb-2">🏥 💊</div>
-                                        <p className="font-bold text-gray-700">対象となるもの</p>
-                                        <p className="text-sm text-gray-500 mt-1">診察、お薬、訪問看護など<br/>※指定医療機関での治療に限ります</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </GuideSection>
-
-                        {/* 申請の流れ (動的切り替え) */}
-                        <GuideSection id="flow" title="申請から利用までの流れ" icon={FileText} className="bg-white">
-                            
-                            {/* タブ切り替え */}
-                            <div className="flex flex-wrap justify-center gap-2 mb-8 bg-gray-100 p-1.5 rounded-xl max-w-lg mx-auto">
-                                {[
-                                    { id: 'new', label: 'まずは 新規申請' },
-                                    { id: 'renew', label: '年に一度の 更新' },
-                                    { id: 'change', label: '住所等の 変更' }
-                                ].map((tab) => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setDocType(tab.id)}
-                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
-                                            docType === tab.id 
-                                                ? 'bg-white text-rose-600 shadow-sm' 
-                                                : 'text-gray-500 hover:text-gray-700'
-                                        }`}
-                                    >
-                                        {tab.label}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="space-y-6">
-                                {/* Step 1 は共通またはタイプごとに微調整 */}
-                                <StepCard 
-                                    number="1"
-                                    title={docType === 'new' ? "難病指定医を受診" : (docType === 'renew' ? "更新案内を確認" : "変更箇所の確認")}
-                                    desc={DOCUMENT_DATA[docType].desc}
-                                    subItems={docType === 'new' ? ["「臨床調査個人票（新規用）」の作成を依頼します", "作成には数週間かかることがあります"] : null}
-                                />
-                                
-                                {/* Step 2 が動的に変わる部分 */}
-                                <StepCard 
-                                    number="2"
-                                    title="必要書類を準備"
-                                    desc={DOCUMENT_DATA[docType].step2_desc}
-                                    subItems={DOCUMENT_DATA[docType].items}
-                                />
-                                
-                                <StepCard 
-                                    number="3"
-                                    title="保健所へ申請"
-                                    desc="書類が揃ったら、住民票のある住所を管轄する「保健所」へ提出します。"
-                                    subItems={["広島市にお住まいの方は各区の保健センターへ", "郵送でも受け付けてもらえる場合があります"]}
-                                />
-                                
-                                <StepCard 
-                                    number="4"
-                                    title={docType === 'new' ? "審査・受給者証の交付" : "新しい受給者証の交付"}
-                                    desc="審査や手続きを経て、新しい受給者証が自宅に届きます。"
-                                />
-                            </div>
-                        </GuideSection>
-
-                        {/* お金の仕組み */}
-                        <GuideSection id="money" title="お金の仕組み（裏側）" icon={Landmark} className="bg-blue-50/50">
-                            <MoneyFlowDiagram />
-                        </GuideSection>
-
-                        {/* FAQ */}
-                        <GuideSection id="faq" title="よくある質問" icon={Stethoscope} className="bg-white">
-                            <div className="space-y-4">
-                                {faqs.map((item, index) => (
-                                    <div key={index} className="border border-gray-200 rounded-2xl overflow-hidden">
-                                        <button 
-                                            className="w-full flex items-center justify-between p-5 bg-white hover:bg-gray-50 transition text-left"
-                                            onClick={() => toggleFaq(index)}
-                                        >
-                                            <span className="font-bold text-gray-700 flex items-center gap-3">
-                                                <span className="text-rose-500 font-extrabold text-xl">Q.</span>
-                                                {item.q}
-                                            </span>
-                                            {openFaq === index ? <ChevronUp className="text-gray-400"/> : <ChevronDown className="text-gray-400"/>}
-                                        </button>
-                                        {openFaq === index && (
-                                            <div className="p-5 bg-rose-50/50 border-t border-gray-100 text-gray-700 leading-relaxed">
-                                                <span className="font-bold text-rose-500 mr-2">A.</span>
-                                                {item.a}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </GuideSection>
-                    </main>
-
-                    {/* チャットボット */}
-                    <ChatBot />
-
-                    {/* フッター */}
-                    <footer className="bg-gray-800 text-gray-300 py-12 px-4 mt-12">
-                        <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-8">
-                            <div>
-                                <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
-                                    <Heart size={18} className="text-rose-400" fill="currentColor" />
-                                    広島県 難病医療費助成ガイド
-                                </h3>
-                                <p className="text-sm leading-relaxed mb-4 text-gray-400">
-                                    このサイトは、広島県が公開している「特定医療費（指定難病）助成制度」の情報を元に、わかりやすく解説した非公式サイトです。<br/>
-                                    最新の情報や正式な様式は、必ず県の公式ページをご確認ください。
-                                </p>
-                            </div>
-                            <div className="space-y-2">
-                                <h4 className="text-white font-bold mb-2">関連リンク</h4>
-                                <a href="https://www.pref.hiroshima.lg.jp/soshiki/56/1170203185703.html" target="_blank" rel="noreferrer" className="block hover:text-rose-400 transition">
-                                    広島県ホームページ（難病対策）
-                                </a>
-                                <a href="https://www.nanbyou.or.jp/" target="_blank" rel="noreferrer" className="block hover:text-rose-400 transition">
-                                    難病情報センター
-                                </a>
-                            </div>
-                        </div>
-                        <div className="max-w-5xl mx-auto mt-12 pt-8 border-t border-gray-700 text-center text-xs text-gray-500">
-                            &copy; Hiroshima Prefecture Nanbyo Guide Visualization.
-                        </div>
-                    </footer>
-                </div>
-            );
-        }
 
         const MoneyFlowDiagram = () => {
             return (
@@ -602,6 +369,441 @@
                 </div>
             );
         };
+
+        // --- チャットボットコンポーネント (AI検索版) ---
+        const ChatBot = () => {
+            const [isOpen, setIsOpen] = useState(false);
+            const [messages, setMessages] = useState([
+                { type: 'bot', text: 'こんにちは！広島県指定難病ガイドAIです。\n知りたいこと（例：「更新の書類」「住所変更」「払い戻し」など）を入力してください。' }
+            ]);
+            const [input, setInput] = useState("");
+            const [suggestions, setSuggestions] = useState([]);
+            const messagesEndRef = useRef(null);
+
+            const scrollToBottom = () => {
+                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            };
+
+            useEffect(() => {
+                scrollToBottom();
+            }, [messages, isOpen, suggestions]);
+
+            const handleSend = () => {
+                if (!input.trim()) return;
+
+                const userMsg = input.trim();
+                setMessages(prev => [...prev, { type: 'user', text: userMsg }]);
+                setInput("");
+                setSuggestions([]);
+
+                setTimeout(() => {
+                    const results = searchKnowledgeBase(userMsg);
+
+                    if (results.length > 0) {
+                        // 最もスコアが高い回答を表示
+                        const topResult = results[0];
+                        setMessages(prev => [...prev, { 
+                            type: 'bot', 
+                            text: topResult.content,
+                            title: topResult.title
+                        }]);
+
+                        // 2位以下があればサジェストとして表示
+                        if (results.length > 1) {
+                             const others = results.slice(1, 4).map(r => r.title);
+                             setSuggestions(others);
+                        }
+                    } else {
+                        setMessages(prev => [...prev, { 
+                            type: 'bot', 
+                            text: "申し訳ありません。そのキーワードでは情報が見つかりませんでした。「申請方法」「窓口」「金額」など、別の言葉で試してみてください。"
+                        }]);
+                        // デフォルトのサジェスト
+                        setSuggestions(["新規申請に必要なもの", "更新はいつ？", "償還払いについて"]);
+                    }
+                }, 600);
+            };
+
+            const handleSuggestionClick = (text) => {
+                // サジェストをクリックしたら、それを入力として検索を実行
+                setMessages(prev => [...prev, { type: 'user', text }]);
+                setSuggestions([]);
+                
+                setTimeout(() => {
+                    // サジェストはタイトルそのものなので、タイトル完全一致で検索（または再検索）
+                    // ここではシンプルにsearchKnowledgeBaseを通す
+                    const results = searchKnowledgeBase(text);
+                    if(results.length > 0) {
+                        setMessages(prev => [...prev, { 
+                            type: 'bot', 
+                            text: results[0].content,
+                            title: results[0].title
+                        }]);
+                    }
+                }, 600);
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') handleSend();
+            };
+
+            return (
+                <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+                    {isOpen && (
+                        <div className="mb-4 w-80 md:w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-slide-up flex flex-col" style={{height: "500px"}}>
+                            <div className="bg-rose-500 p-4 text-white flex justify-between items-center shadow-md">
+                                <div className="flex items-center gap-2">
+                                    <Bot size={20} />
+                                    <span className="font-bold">難病ガイドAI (検索型)</span>
+                                </div>
+                                <button onClick={() => setIsOpen(false)} className="hover:bg-rose-600 p-1 rounded">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 space-y-4">
+                                {messages.map((msg, idx) => (
+                                    <div key={idx} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[85%] rounded-2xl p-3 text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
+                                            msg.type === 'user' 
+                                                ? 'bg-rose-500 text-white rounded-tr-none' 
+                                                : 'bg-white text-gray-700 border border-gray-200 rounded-tl-none'
+                                        }`}>
+                                            {msg.title && <div className="font-bold text-rose-500 mb-1 border-b border-gray-200 pb-1">{msg.title}</div>}
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                ))}
+                                
+                                {suggestions.length > 0 && (
+                                    <div className="flex flex-col gap-2 mt-2 ml-2">
+                                        <span className="text-xs text-gray-400 ml-1">関連する質問:</span>
+                                        {suggestions.map((sug, idx) => (
+                                            <button 
+                                                key={idx}
+                                                onClick={() => handleSuggestionClick(sug)}
+                                                className="text-left text-xs bg-white border border-rose-200 text-rose-600 px-3 py-2 rounded-full hover:bg-rose-50 transition shadow-sm w-fit"
+                                            >
+                                                {sug} ?
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div ref={messagesEndRef} />
+                            </div>
+
+                            <div className="p-3 bg-white border-t border-gray-100">
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"
+                                        placeholder="知りたいことを入力..."
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyDown={handleKeyDown}
+                                    />
+                                    <button 
+                                        onClick={handleSend}
+                                        className="bg-rose-500 text-white p-2 rounded-full hover:bg-rose-600 transition shadow-sm flex-shrink-0"
+                                    >
+                                        <Send size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <button 
+                        onClick={() => setIsOpen(!isOpen)}
+                        className={`${isOpen ? 'bg-gray-500' : 'bg-rose-500'} text-white p-4 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center justify-center`}
+                    >
+                        {isOpen ? <X size={28} /> : 
+                           <div className="relative">
+                               <MessageCircle size={28} />
+                               <span className="absolute -top-2 -right-2 flex h-4 w-4">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-200 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-4 w-4 bg-yellow-400 border-2 border-rose-500"></span>
+                                </span>
+                           </div>
+                        }
+                    </button>
+                </div>
+            );
+        };
+
+
+        // --- ドキュメントデータ ---
+        const DOCUMENT_DATA = {
+            new: {
+                title: "新規申請",
+                desc: "初めて申請をする場合の手続きです。診断から原則1ヶ月以内に申請してください。",
+                step2_desc: "お住まいの市役所などで必要な書類を集めます（広島県の場合）。",
+                items: [
+                    "特定医療費（指定難病）支給認定申請書（様式1）",
+                    "臨床調査個人票（難病指定医が作成したもの・6ヶ月以内）",
+                    "住民票（世帯全員分・マイナンバー入り・3ヶ月以内）",
+                    "市町村民税課税証明書（世帯全員分など）",
+                    "健康保険証のコピー（患者と被保険者分）",
+                    "※広島市在住の方は各区保健センターへ"
+                ]
+            },
+            renew: {
+                title: "更新申請",
+                desc: "年に1回の更新手続きです。通常、5月〜6月頃に案内が届きます。",
+                step2_desc: "送られてきた更新案内を確認し、以下の書類を準備します。",
+                items: [
+                    "特定医療費（指定難病）支給認定申請書（更新用・様式2）",
+                    "臨床調査個人票（更新用）",
+                    "現在の受給者証のコピー",
+                    "自己負担上限額管理票のコピー",
+                    "健康保険証のコピー",
+                    "市町村民税課税証明書（マイナンバー連携していない場合など）"
+                ]
+            },
+            change: {
+                title: "変更申請",
+                desc: "住所、氏名、加入保険が変わった場合などは、速やかに届け出が必要です。",
+                step2_desc: "変更内容によって書類が異なりますが、基本的には以下が必要です。",
+                items: [
+                    "特定医療費（指定難病）支給認定申請書（変更用）または変更届",
+                    "変更の事実が確認できる書類（新しい住民票、保険証など）",
+                    "現在の受給者証（原本が必要な場合あり）",
+                    "※階層区分が変わる場合は、課税証明書も必要です"
+                ]
+            }
+        };
+
+        // メイン App コンポーネント
+        function App() {
+            const [isMenuOpen, setIsMenuOpen] = useState(false);
+            const [openFaq, setOpenFaq] = useState(null);
+            const [docType, setDocType] = useState("new"); // new, renew, change
+
+            const toggleFaq = (index) => {
+                setOpenFaq(openFaq === index ? null : index);
+            };
+
+            const faqs = [
+                {
+                    q: "「軽症高額」ってなに？",
+                    a: "病状の基準（重症度）には届かないけれど、医療費がたくさんかかっている方のための特例です。申請前の12ヶ月以内に、指定難病の医療費総額（10割分）が33,330円を超える月が3回以上あれば対象になります。"
+                },
+                {
+                    q: "自己負担上限額はどうやって決まるの？",
+                    a: "世帯の所得（市町村民税額）によって決まります。例えば、一般所得の方なら月額1万円〜2万円、低所得の方は2,500円〜5,000円などが上限となります。"
+                },
+                {
+                    q: "広島市に住んでいるんだけど...",
+                    a: "このサイトの情報は主に広島県（広島市以外）の方に向けた内容です。広島市にお住まいの方は、申請窓口が「各区の保健センター」になります。"
+                },
+                {
+                    q: "受給者証はいつ届く？",
+                    a: "申請から交付まで、通常2〜3ヶ月程度かかります。手元に届くまでに支払った医療費は、後から「償還払い（払い戻し）」の手続きができます。"
+                }
+            ];
+
+            return (
+                <div className="min-h-screen bg-[#FFFBF7] font-sans text-gray-700 pb-20">
+                    <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md shadow-sm border-b border-rose-100">
+                        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="bg-rose-500 text-white p-1.5 rounded-lg">
+                                    <Heart size={20} fill="currentColor" />
+                                </div>
+                                <h1 className="font-bold text-lg md:text-xl tracking-tight text-gray-800">
+                                    広島県 難病医療費助成ガイド
+                                </h1>
+                            </div>
+                            
+                            <nav className="hidden md:flex gap-6 text-sm font-medium text-gray-600">
+                                <a href="#about" className="hover:text-rose-500 transition">制度について</a>
+                                <a href="#flow" className="hover:text-rose-500 transition">申請の流れ</a>
+                                <a href="#money" className="hover:text-rose-500 transition">お金の仕組み</a>
+                                <a href="#faq" className="hover:text-rose-500 transition">よくある質問</a>
+                            </nav>
+
+                            <button className="md:hidden text-gray-600" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+                                {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                            </button>
+                        </div>
+
+                        {isMenuOpen && (
+                            <div className="md:hidden bg-white border-t border-gray-100 absolute w-full shadow-lg">
+                                <div className="flex flex-col p-4 gap-4 text-sm font-medium">
+                                    <a href="#about" onClick={() => setIsMenuOpen(false)}>制度について</a>
+                                    <a href="#flow" onClick={() => setIsMenuOpen(false)}>申請の流れ</a>
+                                    <a href="#money" onClick={() => setIsMenuOpen(false)}>お金の仕組み</a>
+                                    <a href="#faq" onClick={() => setIsMenuOpen(false)}>よくある質問</a>
+                                </div>
+                            </div>
+                        )}
+                    </header>
+
+                    <div className="relative bg-gradient-to-br from-rose-50 via-white to-orange-50 py-16 md:py-24 px-4 overflow-hidden">
+                        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-yellow-100 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
+                        <div className="absolute top-0 left-0 -ml-20 -mt-20 w-64 h-64 bg-rose-100 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
+                        
+                        <div className="max-w-4xl mx-auto text-center relative z-10">
+                            <span className="inline-block py-1 px-3 rounded-full bg-rose-100 text-rose-600 text-sm font-bold mb-4">
+                                申請手続きがわかりやすく
+                            </span>
+                            <h1 className="text-3xl md:text-5xl font-extrabold text-gray-800 mb-6 leading-tight">
+                                治療費の不安を、<br className="md:hidden"/>安心に変える制度です。
+                            </h1>
+                            <p className="text-gray-600 md:text-lg mb-8 max-w-2xl mx-auto leading-relaxed">
+                                指定難病と診断された方のために、医療費の負担を軽くする「医療費助成制度」。
+                                申請の種類に合わせた必要書類や、お金の仕組みをやさしく解説します。
+                            </p>
+                            <div className="flex flex-wrap justify-center gap-4">
+                                <a href="#flow" className="bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:bg-rose-600 hover:shadow-xl transition transform hover:-translate-y-0.5">
+                                    申請の流れを見る
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <main>
+                        <GuideSection id="about" title="どんな制度？" icon={HelpCircle} className="bg-white">
+                            <div className="grid md:grid-cols-2 gap-8 items-center">
+                                <div className="space-y-4">
+                                    <p className="text-lg text-gray-700 leading-relaxed">
+                                        国が定めた「指定難病」にかかっている方で、病状などが一定の基準を満たす場合に、
+                                        <span className="font-bold text-rose-500 bg-rose-50 px-1">医療費の一部を国や県が助成してくれる</span>制度です。
+                                    </p>
+                                    <div className="bg-teal-50 p-5 rounded-2xl border border-teal-100">
+                                        <h3 className="font-bold text-teal-800 mb-2 flex items-center gap-2">
+                                            <CheckCircle2 size={18} />
+                                            メリット
+                                        </h3>
+                                        <ul className="space-y-2 text-sm text-teal-900">
+                                            <li>・窓口での支払いが2割負担になります（通常3割の方）。</li>
+                                            <li>・所得に応じて、月ごとの支払い上限額（キャップ）が決まります。</li>
+                                            <li>・上限額を超えた分は支払わなくてOKです。</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div className="bg-orange-50 rounded-2xl p-6 flex items-center justify-center">
+                                    <div className="text-center">
+                                        <div className="text-4xl mb-2">🏥 💊</div>
+                                        <p className="font-bold text-gray-700">対象となるもの</p>
+                                        <p className="text-sm text-gray-500 mt-1">診察、お薬、訪問看護など<br/>※指定医療機関での治療に限ります</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </GuideSection>
+
+                        <GuideSection id="flow" title="申請から利用までの流れ" icon={FileText} className="bg-white">
+                            <div className="flex flex-wrap justify-center gap-2 mb-8 bg-gray-100 p-1.5 rounded-xl max-w-lg mx-auto">
+                                {[
+                                    { id: 'new', label: 'まずは 新規申請' },
+                                    { id: 'renew', label: '年に一度の 更新' },
+                                    { id: 'change', label: '住所等の 変更' }
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setDocType(tab.id)}
+                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
+                                            docType === tab.id 
+                                                ? 'bg-white text-rose-600 shadow-sm' 
+                                                : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="space-y-6">
+                                <StepCard 
+                                    number="1"
+                                    title={docType === 'new' ? "難病指定医を受診" : (docType === 'renew' ? "更新案内を確認" : "変更箇所の確認")}
+                                    desc={DOCUMENT_DATA[docType].desc}
+                                    subItems={docType === 'new' ? ["「臨床調査個人票（新規用）」の作成を依頼します", "作成には数週間かかることがあります"] : null}
+                                />
+                                
+                                <StepCard 
+                                    number="2"
+                                    title="必要書類を準備"
+                                    desc={DOCUMENT_DATA[docType].step2_desc}
+                                    subItems={DOCUMENT_DATA[docType].items}
+                                />
+                                
+                                <StepCard 
+                                    number="3"
+                                    title="保健所へ申請"
+                                    desc="書類が揃ったら、住民票のある住所を管轄する「保健所」へ提出します。"
+                                    subItems={["広島市にお住まいの方は各区の保健センターへ", "郵送でも受け付けてもらえる場合があります"]}
+                                />
+                                
+                                <StepCard 
+                                    number="4"
+                                    title={docType === 'new' ? "審査・受給者証の交付" : "新しい受給者証の交付"}
+                                    desc="審査や手続きを経て、新しい受給者証が自宅に届きます。"
+                                />
+                            </div>
+                        </GuideSection>
+
+                        <GuideSection id="money" title="お金の仕組み（裏側）" icon={Landmark} className="bg-blue-50/50">
+                            <MoneyFlowDiagram />
+                        </GuideSection>
+
+                        <GuideSection id="faq" title="よくある質問" icon={Stethoscope} className="bg-white">
+                            <div className="space-y-4">
+                                {faqs.map((item, index) => (
+                                    <div key={index} className="border border-gray-200 rounded-2xl overflow-hidden">
+                                        <button 
+                                            className="w-full flex items-center justify-between p-5 bg-white hover:bg-gray-50 transition text-left"
+                                            onClick={() => toggleFaq(index)}
+                                        >
+                                            <span className="font-bold text-gray-700 flex items-center gap-3">
+                                                <span className="text-rose-500 font-extrabold text-xl">Q.</span>
+                                                {item.q}
+                                            </span>
+                                            {openFaq === index ? <ChevronUp className="text-gray-400"/> : <ChevronDown className="text-gray-400"/>}
+                                        </button>
+                                        {openFaq === index && (
+                                            <div className="p-5 bg-rose-50/50 border-t border-gray-100 text-gray-700 leading-relaxed">
+                                                <span className="font-bold text-rose-500 mr-2">A.</span>
+                                                {item.a}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </GuideSection>
+                    </main>
+
+                    <ChatBot />
+
+                    <footer className="bg-gray-800 text-gray-300 py-12 px-4 mt-12">
+                        <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-8">
+                            <div>
+                                <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+                                    <Heart size={18} className="text-rose-400" fill="currentColor" />
+                                    広島県 難病医療費助成ガイド
+                                </h3>
+                                <p className="text-sm leading-relaxed mb-4 text-gray-400">
+                                    このサイトは、広島県が公開している「特定医療費（指定難病）助成制度」の情報を元に、わかりやすく解説した非公式サイトです。<br/>
+                                    最新の情報や正式な様式は、必ず県の公式ページをご確認ください。
+                                </p>
+                            </div>
+                            <div className="space-y-2">
+                                <h4 className="text-white font-bold mb-2">関連リンク</h4>
+                                <a href="https://www.pref.hiroshima.lg.jp/soshiki/56/1170203185703.html" target="_blank" rel="noreferrer" className="block hover:text-rose-400 transition">
+                                    広島県ホームページ（難病対策）
+                                </a>
+                                <a href="https://www.nanbyou.or.jp/" target="_blank" rel="noreferrer" className="block hover:text-rose-400 transition">
+                                    難病情報センター
+                                </a>
+                            </div>
+                        </div>
+                        <div className="max-w-5xl mx-auto mt-12 pt-8 border-t border-gray-700 text-center text-xs text-gray-500">
+                            &copy; Hiroshima Prefecture Nanbyo Guide Visualization.
+                        </div>
+                    </footer>
+                </div>
+            );
+        }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
